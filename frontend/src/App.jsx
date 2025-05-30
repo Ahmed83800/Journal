@@ -15,17 +15,14 @@ function App() {
     email: '',
     fullName: ''
   });
-
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [thought, setThought] = useState('');
   const [showThoughtMessage, setShowThoughtMessage] = useState(false);
-  const [showall, setShowAll] = useState(false);
   const [thoughts, setThoughts] = useState([]);
-  const [mood, setMood] = useState('neutral');  // default mood
-
-
-  // Store current user id after login/signup
+  const [mood, setMood] = useState('neutral');
   const [userId, setUserId] = useState(null);
+  const [currentPage, setCurrentPage] = useState('new');
+  const [editingThoughtId, setEditingThoughtId] = useState(null);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -37,7 +34,7 @@ function App() {
     const data = await res.json();
     if (res.ok) {
       setIsAuthenticated(true);
-      setUserId(data.userId); // assume your server returns userId on login success
+      setUserId(data.userId);
     }
     alert(data.message || data.error);
   };
@@ -52,39 +49,40 @@ function App() {
     const data = await res.json();
     if (res.ok) {
       setIsAuthenticated(true);
-      setUserId(data.userId); // assume your server returns userId on signup success
+      setUserId(data.userId);
     }
     alert(data.message || data.error);
   };
 
-  // Submit new thought to backend
   const handleThoughtSubmit = async (e) => {
-  e.preventDefault();
-  if (!userId) return alert("User ID not found");
+    e.preventDefault();
+    if (!userId) return alert("User ID not found");
 
-  try {
-    const res = await fetch('/api/thoughts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, text: thought, mood }),
-    });
+    const url = editingThoughtId ? `/api/thoughts/${editingThoughtId}` : '/api/thoughts';
+    const method = editingThoughtId ? 'PUT' : 'POST';
 
-    const data = await res.json();
-    if (res.ok) {
-      setShowThoughtMessage(true);
-      setThought('');
-      setMood('neutral'); // reset mood after submit
-      if (showall) fetchAllThoughts();
-    } else {
-      alert(data.error || 'Failed to add thought');
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, text: thought, mood }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setShowThoughtMessage(true);
+        setThought('');
+        setMood('neutral');
+        setEditingThoughtId(null);
+        if (currentPage === 'all') fetchAllThoughts();
+      } else {
+        alert(data.error || 'Failed to submit thought');
+      }
+    } catch {
+      alert('Error submitting thought');
     }
-  } catch {
-    alert('Error submitting thought');
-  }
   };
 
-
-  // Fetch all thoughts from server for current user
   const fetchAllThoughts = async () => {
     if (!userId) return;
     try {
@@ -100,69 +98,102 @@ function App() {
     }
   };
 
-  // When showall changes to true, fetch all thoughts
-  useEffect(() => {
-    if (showall) {
+  const deleteThought = async (id) => {
+    const res = await fetch(`/api/thoughts/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
       fetchAllThoughts();
+    } else {
+      alert(data.error || 'Failed to delete');
     }
-  }, [showall]);
+  };
 
-  if (isAuthenticated) {
+  const editThought = (t) => {
+    setThought(t.text);
+    setMood(t.mood);
+    setEditingThoughtId(t._id);
+    setCurrentPage('new');
+  };
+
+  useEffect(() => {
+    if (currentPage === 'all') fetchAllThoughts();
+  }, [currentPage]);
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    setUserId(null);
+    setThought('');
+    setThoughts([]);
+    setCurrentPage('new');
+    setLoginUsername('');
+    setLoginPassword('');
+  };
+
+  if (!isAuthenticated) {
     return (
       <div className="container">
-        <ThoughtForm
-          thought={thought}
-          setThought={setThought}
-          mood={mood}
-          setMood={setMood}
-          handleThoughtSubmit={handleThoughtSubmit}
-          showThoughtMessage={showThoughtMessage}
-       />
-
-
-        <button onClick={() => setShowAll(prev => !prev)}>
-          {showall ? 'Hide All Thoughts' : 'Show All Thoughts'}
-        </button>
-
-        {showall && (
-          <div style={{ marginTop: '20px' }}>
-            <h3>All Your Thoughts</h3>
-            {thoughts.length === 0 ? (
-              <p>No thoughts yet.</p>
-            ) : (
-              <ul>
-                {thoughts.map(t => (
-                  <li key={t._id}>
-                    <strong>{t.mood}</strong> — {t.text} <em>({new Date(t.date).toLocaleString()})</em>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <h1>Welcome to My Journal!</h1>
+        <AuthToggle showLogin={showLogin} setShowLogin={setShowLogin} />
+        {showLogin ? (
+          <LoginForm
+            loginUsername={loginUsername}
+            setLoginUsername={setLoginUsername}
+            loginPassword={loginPassword}
+            setLoginPassword={setLoginPassword}
+            handleLogin={handleLogin}
+          />
+        ) : (
+          <SignupForm
+            signupInfo={signupInfo}
+            setSignupInfo={setSignupInfo}
+            handleSignup={handleSignup}
+          />
         )}
       </div>
     );
   }
 
   return (
-    <div className="container">
-      <h1>Welcome to My Journal!</h1>
-      <AuthToggle showLogin={showLogin} setShowLogin={setShowLogin} />
-      {showLogin ? (
-        <LoginForm
-          loginUsername={loginUsername}
-          setLoginUsername={setLoginUsername}
-          loginPassword={loginPassword}
-          setLoginPassword={setLoginPassword}
-          handleLogin={handleLogin}
-        />
-      ) : (
-        <SignupForm
-          signupInfo={signupInfo}
-          setSignupInfo={setSignupInfo}
-          handleSignup={handleSignup}
-        />
-      )}
+    <div className="app-layout">
+      <div className="sidebar">
+        <button onClick={() => setCurrentPage('new')}>New Thought</button>
+        <button onClick={() => setCurrentPage('all')}>Show All Thoughts</button>
+        <button onClick={logout}>Logout</button>
+      </div>
+
+      <div className="content">
+        {currentPage === 'new' && (
+          <ThoughtForm
+            thought={thought}
+            setThought={setThought}
+            mood={mood}
+            setMood={setMood}
+            handleThoughtSubmit={handleThoughtSubmit}
+            showThoughtMessage={showThoughtMessage}
+          />
+        )}
+
+        {currentPage === 'all' && (
+          <div>
+            <h3>All Your Thoughts</h3>
+            {thoughts.length === 0 ? (
+              <p>No thoughts yet.</p>
+            ) : (
+              <div className="thought-cards">
+                {thoughts.map(t => (
+                  <div className="thought-card" key={t._id}>
+                    <p><strong>Mood:</strong> {t.mood}</p>
+                    <p>{t.text}</p>
+                    <p><em>{new Date(t.date).toLocaleString()}</em></p>
+                    <button onClick={() => editThought(t)}>Update</button>
+                    <button onClick={() => deleteThought(t._id)}>Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
